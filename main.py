@@ -27,10 +27,9 @@ def parse_data():
 
     while True:
         curr = datetime.datetime.utcnow() + datetime.timedelta(hours=settings.TIMEDELTA_MSK)
-        week_day = curr.isoweekday()
         current_time = curr.strftime("%H:%M")
 
-        if week_day == settings.UPDATE_WEEKDAY and current_time == settings.UPDATE_TIME:
+        if current_time == settings.UPDATE_TIME:
             try:
                 elastik = wb_elastik.combine_sales_remains()
             except Exception as ex:
