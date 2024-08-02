@@ -60,13 +60,23 @@ class Gspread:
     def _set_range(self, milvane, elastik):
 
         if self._list_name == config.WB_LIST:
-            range_milvane = f'G4:BU{3 + len(milvane)}'
-            range_elastik = f'G{len(milvane) + 9}:BU{len(milvane) + 8 + len(elastik)}'
+            range_milvane = f'G4:BW{3 + len(milvane)}'
+            range_elastik = f'G{len(milvane) + 9}:BW{len(milvane) + 8 + len(elastik)}'
         else:
-            range_milvane = f'G4:AD{3 + len(milvane)}'
-            range_elastik = f'G{len(milvane) + 9}:AD{len(milvane) + 8 + len(elastik)}'
+            range_milvane = f'G4:BF{3 + len(milvane)}'
+            range_elastik = f'G{len(milvane) + 9}:BF{len(milvane) + 8 + len(elastik)}'
 
         return range_milvane, range_elastik
+    
+    def set_action_titles_milvane(self, titles):
+        self.work_sheet.batch_clear(["AE3:BF3"])
+        self.work_sheet.update("AE3:BF3", [titles])
+    
+    def set_action_titles_elastic(self, milvane, titles):
+        start_row = len(milvane) + 8
+        start_row = 64 + 8
+        self.work_sheet.batch_clear([f"AE{start_row}:BF{start_row}"])
+        self.work_sheet.update(f"AE{start_row}:BF{start_row}", [titles])
 
     def _set_range_values(self, calls_range, values):
         self.work_sheet.update(calls_range, values)
@@ -139,6 +149,8 @@ class Wb:
                 remains[article]['total'] += remain
                 if storage in settings.wb_warehouses:
                     remains[article][storage] += remain
+                else:
+                    print(storage)
         
         return remains
     
@@ -245,6 +257,10 @@ class Ozon:
     STORAGE_API_LINK = settings.OZON_STAT_API_MAIN_PATH + settings.OZON_STORAGE_API_PATH
     SALES_API_LINK = settings.OZON_STAT_API_MAIN_PATH + settings.OZON_SALES_API_PATH
     INCOME_API_LINK = settings.OZON_STAT_API_MAIN_PATH + settings.OZON_INCOME_API_PATH
+    ACTIONS_API_LINK = settings.OZON_STAT_API_MAIN_PATH + settings.OZON_ACTIONS_PATH
+    ACTIONS_PRODUCTS_API_LINK = settings.OZON_STAT_API_MAIN_PATH + settings.OZON_ACTIONS_PRODUCTS_PATH
+    SKU_API_LINK = settings.OZON_STAT_API_MAIN_PATH + settings.OZON_SKU_PATH
+
     PRODUCTS_IN_INCOME_API_PATH = settings.OZON_STAT_API_MAIN_PATH + settings.OZON_PRODUCTS_IN_INCOME_API_PATH
     
     def __init__(self, token, client_id):
@@ -282,6 +298,41 @@ class Ozon:
 
         return response.json()
     
+    def _get_actions(self):
+        return requests.get(self.ACTIONS_API_LINK, headers=self.header,).json().get('result')
+
+    def _get_actions_products(self, ozon_actions):
+        actions = {}
+        for action in ozon_actions:
+            action_id = action.get('id')
+            params = {
+                "action_id": action_id,
+                "limit": 1000,
+                "offset": 0,
+            }
+            products = requests.post(self.ACTIONS_PRODUCTS_API_LINK, headers=self.header, json=params).json().get('result').get('products')
+            
+            for product in products:
+                prod_id = product.get('id')
+                action_price = product.get('max_action_price')
+
+                if prod_id not in settings.OZON_SKU:
+                    params = {
+                        "offer_id": "",
+                        "product_id": prod_id,
+                        "sku": 0
+                    }
+                    settings.OZON_SKU[prod_id] = requests.post(self.SKU_API_LINK, headers=self.header, json=params).json().get('result').get('sku')
+                article = str(settings.OZON_SKU[prod_id])
+                
+                if article != 0:
+                    if article not in actions:
+                        actions[article] = {}
+                    
+                    actions[article][action_id] = action_price
+        
+        return actions
+
     def _count_remains(self):
         remains = {}
 
@@ -360,6 +411,8 @@ class Ozon:
         sales = self._count_sales()
         remains = self._count_remains()
         incomes = self._count_incomes()
+        ozon_actions = self._get_actions()
+        actions = self._get_actions_products(ozon_actions)
 
         report = {}
 
@@ -387,15 +440,18 @@ class Ozon:
 
             if article not in report:
                 report[article] = [0, sale, income, *[0] * (len(settings.ozon_warehouses) - 1)]
-        
-        return report
 
+        actions_titles = []
+        for action in ozon_actions:
+            action_id = action.get('id')
+            action_title = action.get('title')
+            actions_titles.append(action_title)
 
+            for article in report:
+                if (article in actions) and (action_id in actions[article]):
+                    report[article].append(actions[article][action_id])
+                else:
+                    report[article].append('-')
 
-# e = Wb(config.WB_TOKEN1).combine_sales_remains()
-# m = Wb(config.WB_TOKEN2).combine_sales_remains()
-# Gspread(config.WB_LIST).update_data(m, e)
+        return report, actions_titles
 
-# e = Ozon(config.OZON_TOKEN1, config.OZON_ID1).combine_sales_remains()
-# m = Ozon(config.OZON_TOKEN2, config.OZON_ID2).combine_sales_remains()
-# Gspread(config.OZON_LIST).update_data(m, e)

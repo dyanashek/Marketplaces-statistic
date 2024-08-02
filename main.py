@@ -46,21 +46,22 @@ def parse_data():
                 logging.error(f'{inspect.currentframe().f_code.co_name}: WB spread. {ex}')
 
             try:
-                elastik = ozon_elastik.combine_sales_remains()
+                elastik, titles_elastic = ozon_elastik.combine_sales_remains()
             except Exception as ex:
                 logging.error(f'{inspect.currentframe().f_code.co_name}: Ozon elastik (token1). {ex}')
             
             try:
-                milvane = ozon_milvane.combine_sales_remains()
+                milvane, titles_milvane = ozon_milvane.combine_sales_remains()
             except Exception as ex:
                 logging.error(f'{inspect.currentframe().f_code.co_name}: Ozon milvane (token2). {ex}')
             
             try:
                 ozon_spread.update_data(milvane, elastik)
+                ozon_spread.set_action_titles_milvane(titles_milvane)
+                ozon_spread.set_action_titles_elastic(milvane, titles_elastic)
             except Exception as ex:
                 logging.error(f'{inspect.currentframe().f_code.co_name}: Ozon spread. {ex}')
-            
-            time.sleep(settings.UPDATE_PERIOD * 86400 - 300)
+            time.sleep(settings.UPDATE_PERIOD * 86400 - 500)
         
         time.sleep(2)
 
